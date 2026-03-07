@@ -80,8 +80,9 @@ class DatabaseManager {
     }
 
     try {
-      const [results] = await this.db.executeSql(sql, params);
-      return results;
+      const results = await this.db.executeSql(sql, params);
+      // Handle both array and direct result formats
+      return Array.isArray(results) ? results[0] : results;
     } catch (error) {
       console.error('SQL execution failed:', error);
       throw error;
@@ -157,6 +158,61 @@ class DatabaseManager {
     });
 
     console.log('All data cleared successfully');
+  }
+
+  /**
+   * Check database version and perform migrations if needed
+   */
+  async checkAndMigrate(): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      // Get current version from a metadata table
+      const [result] = await this.db.executeSql(
+        'SELECT version FROM database_metadata WHERE id = 1'
+      );
+      
+      const currentVersion = result.rows.item(0)?.version || 0;
+      
+      if (currentVersion < DATABASE_VERSION) {
+        await this.performMigration(currentVersion, DATABASE_VERSION);
+      }
+    } catch (error) {
+      // If metadata table doesn't exist, create it
+      await this.db.executeSql(`
+        CREATE TABLE IF NOT EXISTS database_metadata (
+          id INTEGER PRIMARY KEY CHECK(id = 1),
+          version INTEGER NOT NULL
+        );
+      `);
+      
+      await this.db.executeSql(
+        'INSERT OR REPLACE INTO database_metadata (id, version) VALUES (1, ?)',
+        [DATABASE_VERSION]
+      );
+    }
+  }
+
+  /**
+   * Perform database migration
+   */
+  private async performMigration(fromVersion: number, toVersion: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    console.log(`Migrating database from version ${fromVersion} to ${toVersion}`);
+    
+    // Add migration logic here as schema evolves
+    // For now, just update the version
+    await this.db.executeSql(
+      'UPDATE database_metadata SET version = ? WHERE id = 1',
+      [toVersion]
+    );
+    
+    console.log('Migration completed successfully');
   }
 }
 

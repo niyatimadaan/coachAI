@@ -1,28 +1,48 @@
 /**
  * Root Navigator
- * Main navigation structure for the app
+ * Main navigation structure for the app with onboarding support
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
-
-// Placeholder screens - will be implemented in later tasks
-const HomeScreen = () => null;
-const VideoCaptureScreen = () => null;
-const AnalysisScreen = () => null;
-const ProgressScreen = () => null;
-const SettingsScreen = () => null;
-const OnboardingScreen = () => null;
+import { HomeScreen } from '../screens/HomeScreen';
+import { VideoCaptureScreen } from '../screens/VideoCaptureScreen';
+import { AnalysisScreen } from '../screens/AnalysisScreen';
+import { ProgressScreen } from '../screens/ProgressScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { OnboardingManager } from '../onboarding/OnboardingManager';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
+  const [initialRoute, setInitialRoute] = useState<'Home' | 'Onboarding' | null>(null);
+  const onboardingManager = OnboardingManager;
+
+  useEffect(() => {
+    checkOnboarding();
+  }, []);
+
+  const checkOnboarding = async () => {
+    const completed = await onboardingManager.hasCompletedOnboarding();
+    setInitialRoute(completed ? 'Home' : 'Onboarding');
+  };
+
+  if (!initialRoute) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="Home"
+        initialRouteName={initialRoute}
         screenOptions={{
           headerShown: true,
           headerStyle: {
@@ -69,3 +89,12 @@ export const RootNavigator: React.FC = () => {
     </NavigationContainer>
   );
 };
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+  },
+});

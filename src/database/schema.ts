@@ -131,6 +131,41 @@ export const CREATE_TABLES = {
       last_attempt INTEGER,
       FOREIGN KEY (session_id) REFERENCES shooting_sessions(id) ON DELETE CASCADE
     );
+  `,
+  
+  privacy_preferences: `
+    CREATE TABLE IF NOT EXISTS privacy_preferences (
+      user_id TEXT PRIMARY KEY,
+      local_processing_only INTEGER DEFAULT 0,
+      cloud_processing_enabled INTEGER DEFAULT 0,
+      video_upload_enabled INTEGER DEFAULT 0,
+      analytics_enabled INTEGER DEFAULT 1,
+      data_sharing_enabled INTEGER DEFAULT 0,
+      last_updated INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES students(id) ON DELETE CASCADE
+    );
+  `,
+  
+  session_backups: `
+    CREATE TABLE IF NOT EXISTS session_backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES shooting_sessions(id) ON DELETE CASCADE
+    );
+  `,
+  
+  privacy_events: `
+    CREATE TABLE IF NOT EXISTS privacy_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      details TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES students(id) ON DELETE CASCADE
+    );
   `
 };
 
@@ -159,5 +194,15 @@ export const CREATE_INDEXES = {
   sync_queue_status: `
     CREATE INDEX IF NOT EXISTS idx_sync_queue_status 
     ON sync_queue(operation, retry_count);
+  `,
+  
+  session_backups_session: `
+    CREATE INDEX IF NOT EXISTS idx_session_backups_session 
+    ON session_backups(session_id, timestamp DESC);
+  `,
+  
+  privacy_events_user: `
+    CREATE INDEX IF NOT EXISTS idx_privacy_events_user 
+    ON privacy_events(user_id, timestamp DESC);
   `
 };

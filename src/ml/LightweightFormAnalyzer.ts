@@ -74,7 +74,7 @@ export async function performLightweightMLAnalysis(
     const biomechanics = calculateBiomechanicsFromPose(phases);
     
     // Generate form score
-    const overallScore = calculateFormScore(biomechanics);
+    const scoreResult = calculateFormScore(biomechanics);
     
     // Detect specific form issues
     const detectedIssues = detectFormIssuesFromPose(biomechanics, phases);
@@ -85,15 +85,18 @@ export async function performLightweightMLAnalysis(
       wristAngle: biomechanics.wristAngle,
       shoulderSquare: biomechanics.shoulderSquare,
       followThrough: biomechanics.followThrough,
+      bodyBalance: biomechanics.bodyBalance,
     };
     
     const processingTime = Date.now() - startTime;
     console.log(`Lightweight ML analysis completed in ${processingTime}ms`);
     
     return {
-      overallScore,
+      overallScore: scoreResult.letter,
+      numericScore: scoreResult.numeric,
       detectedIssues,
       biomechanicalMetrics,
+      keypointFrames, // Include for visualization
     };
   } catch (error) {
     console.error('Lightweight ML analysis failed:', error);
@@ -197,6 +200,7 @@ export function calculateBiomechanicsFromPose(
 /**
  * Calculate elbow alignment score
  * Measures how well the elbow is aligned under the ball
+ * Uses range-based scoring for more realistic evaluation
  */
 export function calculateElbowAlignment(
   shoulder: PoseLandmark,
@@ -206,13 +210,26 @@ export function calculateElbowAlignment(
   // Calculate angle at elbow joint
   const angle = calculateJointAngle(shoulder, elbow, wrist);
   
-  // Optimal elbow angle is around 90 degrees
-  const optimalAngle = 90;
-  const deviation = Math.abs(angle - optimalAngle);
+  let score: number;
   
-  // Score decreases with deviation from optimal
-  // 0 deviation = 100 score, 30+ deviation = 0 score
-  const score = Math.max(0, 100 - (deviation * 3.33));
+  // Range-based scoring (more generous)
+  if (angle >= 80 && angle <= 100) {
+    // Perfect range: 80-100° = 95-100 points
+    const centerDist = Math.abs(angle - 90);
+    score = 100 - (centerDist * 0.5);
+  } else if ((angle >= 70 && angle < 80) || (angle > 100 && angle <= 115)) {
+    // Good range: 70-80° or 100-115° = 85-95 points
+    const deviation = angle < 80 ? (80 - angle) : (angle - 100);
+    score = 95 - (deviation * 1.0);
+  } else if ((angle >= 55 && angle < 70) || (angle > 115 && angle <= 130)) {
+    // Acceptable range: 55-70° or 115-130° = 70-85 points
+    const deviation = angle < 70 ? (70 - angle) : (angle - 115);
+    score = 85 - (deviation * 1.0);
+  } else {
+    // Poor: <55° or >130° = 0-70 points
+    const deviation = angle < 55 ? (55 - angle) : (angle - 130);
+    score = Math.max(0, 70 - (deviation * 1.5));
+  }
   
   console.log(`Elbow alignment: angle=${angle.toFixed(1)}°, score=${score.toFixed(1)}`);
   
@@ -222,6 +239,7 @@ export function calculateElbowAlignment(
 /**
  * Calculate wrist angle score
  * Measures wrist position at release
+ * For basketball shooting, wrist should be cocked back (45-75° from vertical)
  */
 export function calculateWristAngle(
   elbow: PoseLandmark,
@@ -238,13 +256,28 @@ export function calculateWristAngle(
   // Calculate angle from vertical
   const angleFromVertical = Math.abs(Math.atan2(dx, dy) * (180 / Math.PI));
   
-  // Optimal wrist should be relatively straight (small angle from vertical)
-  const deviation = Math.abs(angleFromVertical - 0);
+  let score: number;
   
-  // Score decreases with deviation
-  const score = Math.max(0, 100 - (deviation * 5));
+  // Range-based scoring for basketball shooting mechanics
+  if (angleFromVertical >= 45 && angleFromVertical <= 75) {
+    // Perfect range: 45-75° (good wrist cock) = 95-100 points
+    const centerDist = Math.abs(angleFromVertical - 60);
+    score = 100 - (centerDist * 0.33);
+  } else if ((angleFromVertical >= 30 && angleFromVertical < 45) || (angleFromVertical > 75 && angleFromVertical <= 90)) {
+    // Good range: 30-45° or 75-90° = 80-95 points
+    const deviation = angleFromVertical < 45 ? (45 - angleFromVertical) : (angleFromVertical - 75);
+    score = 95 - (deviation * 1.0);
+  } else if ((angleFromVertical >= 15 && angleFromVertical < 30) || (angleFromVertical > 90 && angleFromVertical <= 110)) {
+    // Acceptable range: 15-30° or 90-110° = 60-80 points
+    const deviation = angleFromVertical < 30 ? (30 - angleFromVertical) : (angleFromVertical - 90);
+    score = 80 - (deviation * 1.33);
+  } else {
+    // Poor: <15° or >110° = 0-60 points
+    const deviation = angleFromVertical < 15 ? (15 - angleFromVertical) : (angleFromVertical - 110);
+    score = Math.max(0, 60 - (deviation * 1.0));
+  }
   
-  console.log(`Wrist angle: deviation=${deviation.toFixed(1)}°, score=${score.toFixed(1)}`);
+  console.log(`Wrist angle: ${angleFromVertical.toFixed(1)}° from vertical, score=${score.toFixed(1)}`);
   
   return Math.round(score);
 }
@@ -252,6 +285,7 @@ export function calculateWristAngle(
 /**
  * Calculate shoulder square score
  * Measures how square the shoulders are to the basket
+ * Uses range-based scoring with generous margins
  */
 export function calculateShoulderSquare(frame: KeypointFrame): number {
   const leftShoulder = frame.keypoints.get(MajorJoint.LEFT_SHOULDER);
@@ -269,11 +303,25 @@ export function calculateShoulderSquare(frame: KeypointFrame): number {
   // Angle from horizontal (0 = perfectly square)
   const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
   
-  // Optimal is close to 0 degrees (horizontal)
-  const deviation = Math.abs(angle);
+  let score: number;
   
-  // Score decreases with deviation
-  const score = Math.max(0, 100 - (deviation * 5));
+  // Range-based scoring
+  if (angle <= 5) {
+    // Perfect: 0-5° = 95-100 points
+    score = 100 - (angle * 1.0);
+  } else if (angle <= 15) {
+    // Good: 5-15° = 80-95 points
+    score = 95 - ((angle - 5) * 1.5);
+  } else if (angle <= 30) {
+    // Acceptable: 15-30° = 60-80 points
+    score = 80 - ((angle - 15) * 1.33);
+  } else if (angle <= 50) {
+    // Poor: 30-50° = 40-60 points
+    score = 60 - ((angle - 30) * 1.0);
+  } else {
+    // Very poor: >50° = 0-40 points
+    score = Math.max(0, 40 - ((angle - 50) * 0.8));
+  }
   
   console.log(`Shoulder square: angle=${angle.toFixed(1)}°, score=${score.toFixed(1)}`);
   
@@ -352,8 +400,9 @@ export function calculateBodyBalance(frame: KeypointFrame): number {
 
 /**
  * Calculate overall form score from biomechanical metrics
+ * Returns both numeric score and letter grade
  */
-export function calculateFormScore(biomechanics: BiomechanicalAnalysis): FormScore {
+export function calculateFormScore(biomechanics: BiomechanicalAnalysis): { numeric: number; letter: FormScore } {
   // Weighted average of all metrics
   const weights = {
     elbowAlignment: 0.25,
@@ -373,11 +422,14 @@ export function calculateFormScore(biomechanics: BiomechanicalAnalysis): FormSco
   console.log(`Total form score: ${totalScore.toFixed(1)}`);
   
   // Convert to letter grade
-  if (totalScore >= 90) return 'A';
-  if (totalScore >= 80) return 'B';
-  if (totalScore >= 70) return 'C';
-  if (totalScore >= 60) return 'D';
-  return 'F';
+  let letter: FormScore;
+  if (totalScore >= 90) letter = 'A';
+  else if (totalScore >= 80) letter = 'B';
+  else if (totalScore >= 70) letter = 'C';
+  else if (totalScore >= 60) letter = 'D';
+  else letter = 'F';
+  
+  return { numeric: Math.round(totalScore), letter };
 }
 
 /**
@@ -389,8 +441,8 @@ export function detectFormIssuesFromPose(
 ): FormIssue[] {
   const issues: FormIssue[] = [];
   
-  // Check elbow alignment
-  if (biomechanics.elbowAlignment < 60) {
+  // Check elbow alignment (with generous thresholds)
+  if (biomechanics.elbowAlignment < 70) {
     issues.push({
       type: 'elbow_flare',
       severity: 'major',
@@ -401,11 +453,11 @@ export function detectFormIssuesFromPose(
         'Chair drill - Sit and practice shooting motion',
       ],
     });
-  } else if (biomechanics.elbowAlignment < 75) {
+  } else if (biomechanics.elbowAlignment < 85) {
     issues.push({
       type: 'elbow_flare',
       severity: 'moderate',
-      description: 'Your elbow alignment needs improvement. Keep it more vertical.',
+      description: 'Your elbow alignment could be better. Try to keep it more vertical.',
       recommendedDrills: [
         'One-hand form shooting',
         'Mirror practice - Watch your elbow position',
@@ -413,12 +465,12 @@ export function detectFormIssuesFromPose(
     });
   }
   
-  // Check wrist angle
-  if (biomechanics.wristAngle < 65) {
+  // Check wrist angle (based on proper basketball shooting mechanics)
+  if (biomechanics.wristAngle < 60) {
     issues.push({
       type: 'wrist_angle',
       severity: 'moderate',
-      description: 'Your wrist position at release needs work. Aim for a straighter wrist with good snap.',
+      description: 'Your wrist position at release needs work. Focus on proper wrist cock and snap.',
       recommendedDrills: [
         'Wrist flick drill - Practice wrist snap motion',
         'Close-range shooting - Focus on wrist follow-through',
@@ -429,13 +481,13 @@ export function detectFormIssuesFromPose(
     issues.push({
       type: 'wrist_angle',
       severity: 'minor',
-      description: 'Minor wrist angle adjustment needed for optimal release.',
+      description: 'Minor wrist angle adjustment could improve your shot consistency.',
       recommendedDrills: ['Wrist flick drill'],
     });
   }
   
-  // Check shoulder square
-  if (biomechanics.shoulderSquare < 70) {
+  // Check shoulder square (more generous thresholds)
+  if (biomechanics.shoulderSquare < 60) {
     issues.push({
       type: 'stance',
       severity: 'moderate',
@@ -446,10 +498,19 @@ export function detectFormIssuesFromPose(
         'Square-up drill before shooting',
       ],
     });
+  } else if (biomechanics.shoulderSquare < 80) {
+    issues.push({
+      type: 'stance',
+      severity: 'minor',
+      description: 'Your shoulder alignment could be more square to improve accuracy.',
+      recommendedDrills: [
+        'Square-up drill before shooting',
+      ],
+    });
   }
   
-  // Check follow-through
-  if (biomechanics.followThrough < 60) {
+  // Check follow-through (more generous)
+  if (biomechanics.followThrough < 50) {
     issues.push({
       type: 'follow_through',
       severity: 'major',
@@ -460,7 +521,7 @@ export function detectFormIssuesFromPose(
         'Goose-neck finish - Focus on wrist position',
       ],
     });
-  } else if (biomechanics.followThrough < 75) {
+  } else if (biomechanics.followThrough < 70) {
     issues.push({
       type: 'follow_through',
       severity: 'moderate',

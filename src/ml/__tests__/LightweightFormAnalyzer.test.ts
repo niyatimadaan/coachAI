@@ -148,7 +148,8 @@ describe('LightweightFormAnalyzer', () => {
       
       const score = calculateFormScore(biomechanics);
       
-      expect(score).toBe('A');
+      expect(score.letter).toBe('A');
+      expect(score.numeric).toBeGreaterThanOrEqual(90);
     });
 
     it('should return B for good biomechanics', () => {
@@ -163,7 +164,9 @@ describe('LightweightFormAnalyzer', () => {
       
       const score = calculateFormScore(biomechanics);
       
-      expect(score).toBe('B');
+      expect(score.letter).toBe('B');
+      expect(score.numeric).toBeGreaterThanOrEqual(80);
+      expect(score.numeric).toBeLessThan(90);
     });
 
     it('should return F for poor biomechanics', () => {
@@ -178,7 +181,8 @@ describe('LightweightFormAnalyzer', () => {
       
       const score = calculateFormScore(biomechanics);
       
-      expect(score).toBe('F');
+      expect(score.letter).toBe('F');
+      expect(score.numeric).toBeLessThan(60);
     });
   });
 

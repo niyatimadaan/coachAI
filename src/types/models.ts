@@ -38,12 +38,15 @@ export interface BiomechanicalMetrics {
   wristAngle: number;
   shoulderSquare: number;
   followThrough: number;
+  bodyBalance: number;
 }
 
 export interface FormAnalysisResult {
   overallScore: FormScore;
+  numericScore?: number; // 0-100 calculated score
   detectedIssues: FormIssue[];
   biomechanicalMetrics: BiomechanicalMetrics;
+  keypointFrames?: any[]; // KeypointFrame[] from ML analysis
 }
 
 // Pose Estimation Models

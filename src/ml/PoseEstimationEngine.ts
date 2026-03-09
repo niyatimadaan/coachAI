@@ -1,11 +1,13 @@
 /**
  * Pose Estimation Engine
- * Handles TensorFlow Lite pose estimation for lightweight ML analysis
- * Provides keypoint detection for major joints using quantized models
+ * Handles pose estimation for basketball shooting analysis
+ * Supports both AWS SageMaker (production) and mock data (development)
  */
 
 import { PoseLandmark, PoseEstimationResult } from '../types/models';
 import { loadMLModel, runInference, ML_MODELS } from './TensorFlowConfig';
+import { extractFramesAsBuffers, isFFmpegAvailable } from './VideoFrameExtractor';
+import AWSAIService from '../backend/services/AWSAIService';
 
 /**
  * Major joint keypoints for basketball shooting analysis
@@ -138,37 +140,141 @@ export function parseModelOutput(
   const keypoints = new Map<MajorJoint, PoseLandmark>();
   
   // In production, parse actual model output
-  // For MVP, simulate keypoint detection with realistic values
-  const joints = [
-    MajorJoint.NOSE,
-    MajorJoint.LEFT_SHOULDER,
-    MajorJoint.RIGHT_SHOULDER,
-    MajorJoint.LEFT_ELBOW,
-    MajorJoint.RIGHT_ELBOW,
-    MajorJoint.LEFT_WRIST,
-    MajorJoint.RIGHT_WRIST,
-    MajorJoint.LEFT_HIP,
-    MajorJoint.RIGHT_HIP,
-    MajorJoint.LEFT_KNEE,
-    MajorJoint.RIGHT_KNEE,
-    MajorJoint.LEFT_ANKLE,
-    MajorJoint.RIGHT_ANKLE,
-  ];
+  // For MVP, generate realistic basketball shooting pose with anatomically correct positions
   
-  let totalConfidence = 0;
+  // Progress through shooting motion based on timestamp (0-2s animation)
+  const progress = (timestamp % 2000) / 2000; // 0 to 1
   
-  joints.forEach((joint, idx) => {
-    // Simulate realistic keypoint positions
-    const x = 0.3 + Math.random() * 0.4; // Center region
-    const y = 0.2 + (idx / joints.length) * 0.6; // Vertical distribution
-    const z = (Math.random() - 0.5) * 0.2; // Depth variation
-    const visibility = 0.7 + Math.random() * 0.3; // High confidence
-    
-    keypoints.set(joint, { x, y, z, visibility });
-    totalConfidence += visibility;
+  // Animate from prep (0) -> release (0.5) -> follow (1.0)
+  const phase = progress < 0.4 ? 'prep' : (progress < 0.7 ? 'release' : 'follow');
+  
+  // Base positions (normalized 0-1, person centered in frame)
+  const centerX = 0.5;
+  const baseY = 0.65; // Ground level
+  
+  // Head
+  keypoints.set(MajorJoint.NOSE, {
+    x: centerX + (Math.random() - 0.5) * 0.02,
+    y: 0.15 + (Math.random() - 0.5) * 0.01,
+    z: 0,
+    visibility: 0.95
   });
   
-  const avgConfidence = totalConfidence / joints.length;
+  // Shoulders (slight tilt for shooting)
+  const shoulderY = 0.25;
+  keypoints.set(MajorJoint.LEFT_SHOULDER, {
+    x: centerX - 0.08,
+    y: shoulderY,
+    z: -0.02,
+    visibility: 0.9
+  });
+  keypoints.set(MajorJoint.RIGHT_SHOULDER, {
+    x: centerX + 0.08,
+    y: shoulderY + 0.01, // Shooting side slightly lower
+    z: 0.02,
+    visibility: 0.92
+  });
+  
+  // Shooting arm (right) - varies by phase
+  let elbowY, elbowX, wristY, wristX;
+  if (phase === 'prep') {
+    // Preparation: elbow bent, ball at chest/shoulder
+    elbowX = centerX + 0.15;
+    elbowY = 0.35;
+    wristX = centerX + 0.12;
+    wristY = 0.30;
+  } else if (phase === 'release') {
+    // Release: arm extending upward
+    elbowX = centerX + 0.12;
+    elbowY = 0.28;
+    wristX = centerX + 0.10;
+    wristY = 0.18;
+  } else {
+    // Follow-through: arm fully extended, wrist flicked
+    elbowX = centerX + 0.10;
+    elbowY = 0.25;
+    wristX = centerX + 0.08;
+    wristY = 0.12;
+  }
+  
+  keypoints.set(MajorJoint.RIGHT_ELBOW, {
+    x: elbowX,
+    y: elbowY,
+    z: 0.05,
+    visibility: 0.93
+  });
+  keypoints.set(MajorJoint.RIGHT_WRIST, {
+    x: wristX,
+    y: wristY,
+    z: 0.08,
+    visibility: 0.91
+  });
+  
+  // Guide hand (left) - supports ball then releases
+  const guideElbowX = phase === 'follow' ? centerX - 0.12 : centerX - 0.15;
+  const guideWristX = phase === 'follow' ? centerX - 0.10 : centerX - 0.08;
+  
+  keypoints.set(MajorJoint.LEFT_ELBOW, {
+    x: guideElbowX,
+    y: 0.33,
+    z: 0.03,
+    visibility: 0.88
+  });
+  keypoints.set(MajorJoint.LEFT_WRIST, {
+    x: guideWristX,
+    y: 0.28,
+    z: 0.05,
+    visibility: 0.87
+  });
+  
+  // Hips
+  const hipY = 0.48;
+  keypoints.set(MajorJoint.LEFT_HIP, {
+    x: centerX - 0.07,
+    y: hipY,
+    z: 0,
+    visibility: 0.85
+  });
+  keypoints.set(MajorJoint.RIGHT_HIP, {
+    x: centerX + 0.07,
+    y: hipY,
+    z: 0,
+    visibility: 0.86
+  });
+  
+  // Knees (slight bend during shot)
+  const kneeY = baseY - 0.15;
+  keypoints.set(MajorJoint.LEFT_KNEE, {
+    x: centerX - 0.06,
+    y: kneeY,
+    z: 0.02,
+    visibility: 0.83
+  });
+  keypoints.set(MajorJoint.RIGHT_KNEE, {
+    x: centerX + 0.06,
+    y: kneeY,
+    z: 0.02,
+    visibility: 0.84
+  });
+  
+  // Ankles
+  keypoints.set(MajorJoint.LEFT_ANKLE, {
+    x: centerX - 0.05,
+    y: baseY,
+    z: 0,
+    visibility: 0.80
+  });
+  keypoints.set(MajorJoint.RIGHT_ANKLE, {
+    x: centerX + 0.05,
+    y: baseY,
+    z: 0,
+    visibility: 0.81
+  });
+  
+  // Calculate average confidence
+  let totalConfidence = 0;
+  keypoints.forEach(kp => totalConfidence += kp.visibility);
+  const avgConfidence = totalConfidence / keypoints.size;
   
   return {
     keypoints,
@@ -226,7 +332,7 @@ export async function extractVideoFrames(
 
 /**
  * Process entire video for pose estimation
- * Returns keypoints for all frames
+ * Uses AWS SageMaker if configured, otherwise falls back to mock data
  */
 export async function processVideoForPose(
   videoPath: string,
@@ -236,25 +342,96 @@ export async function processVideoForPose(
     console.log(`Processing video for pose estimation: ${videoPath}`);
     const startTime = Date.now();
     
-    // Extract frames
-    const frames = await extractVideoFrames(videoPath);
+    // Check if SageMaker pose detection is enabled
+    const useSageMaker = process.env.USE_SAGEMAKER_POSE_DETECTION === 'true';
+    const sagemakerAvailable = AWSAIService.isAvailable().sagemaker;
     
-    // Process each frame
-    const keypointFrames: KeypointFrame[] = [];
-    
-    for (const frame of frames) {
-      const keypoints = await detectKeypoints(model, frame);
-      keypointFrames.push(keypoints);
+    if (useSageMaker && sagemakerAvailable) {
+      console.log('🔬 Using AWS SageMaker for real pose detection');
+      
+      try {
+        // Check if FFmpeg is available for frame extraction
+        if (!isFFmpegAvailable()) {
+          console.warn('⚠️  FFmpeg not available, falling back to mock data');
+          return await generateMockPoseData(videoPath, model);
+        }
+
+        // Extract video frames as buffers
+        const frameBuffers = await extractFramesAsBuffers(videoPath, {
+          fps: parseInt(process.env.VIDEO_FRAME_EXTRACTION_FPS || '10'),
+          maxFrames: 20,
+          format: 'jpg',
+          quality: 85,
+        });
+
+        if (frameBuffers.length === 0) {
+          console.warn('⚠️  No frames extracted, falling back to mock data');
+          return await generateMockPoseData(videoPath, model);
+        }
+
+        // Call SageMaker for pose detection
+        const keypointFrames = await AWSAIService.detectPoseFromFrames(frameBuffers);
+
+        const processingTime = Date.now() - startTime;
+        console.log(`✅ SageMaker pose detection completed in ${processingTime}ms for ${keypointFrames.length} frames`);
+
+        return keypointFrames;
+
+      } catch (sagemakerError) {
+        console.error('\n' + '='.repeat(60));
+        console.error('❌ SAGEMAKER POSE DETECTION FAILED');
+        console.error('='.repeat(60));
+        console.error('Error details:');
+        console.error('   Error type:', sagemakerError instanceof Error ? sagemakerError.constructor.name : typeof sagemakerError);
+        console.error('   Error name:', sagemakerError instanceof Error ? sagemakerError.name : 'Unknown');
+        console.error('   Error message:', sagemakerError instanceof Error ? sagemakerError.message : String(sagemakerError));
+        if (sagemakerError instanceof Error && sagemakerError.stack) {
+          console.error('   Stack trace:');
+          console.error(sagemakerError.stack);
+        }
+        console.error('Context:');
+        console.error('   Video path:', videoPath);
+        console.error('   SageMaker endpoint:', process.env.SAGEMAKER_ENDPOINT_NAME || 'not set');
+        console.error('   AWS Region:', process.env.AWS_REGION || 'not set');
+        console.error('='.repeat(60));
+        console.log('\n⚠️  FALLING BACK TO MOCK POSE DATA\n');
+        return await generateMockPoseData(videoPath, model);
+      }
+    } else {
+      // SageMaker not configured or disabled
+      if (useSageMaker && !sagemakerAvailable) {
+        console.log('⚠️  SageMaker requested but not configured. Check AWS credentials and SAGEMAKER_ENDPOINT_NAME');
+      } else {
+        console.log('ℹ️  Using mock pose data (SageMaker disabled)');
+      }
+      
+      return await generateMockPoseData(videoPath, model);
     }
-    
-    const processingTime = Date.now() - startTime;
-    console.log(`Pose estimation completed in ${processingTime}ms for ${keypointFrames.length} frames`);
-    
-    return keypointFrames;
   } catch (error) {
     console.error('Video pose processing failed:', error);
     throw new Error(`Video pose processing failed: ${error}`);
   }
+}
+
+/**
+ * Generate mock pose data for development/testing
+ */
+async function generateMockPoseData(
+  videoPath: string,
+  model: any
+): Promise<KeypointFrame[]> {
+  // Extract frames and use mock detection
+  const frames = await extractVideoFrames(videoPath);
+  
+  // Process each frame
+  const keypointFrames: KeypointFrame[] = [];
+  
+  for (const frame of frames) {
+    const keypoints = await detectKeypoints(model, frame);
+    keypointFrames.push(keypoints);
+  }
+  
+  return keypointFrames;
 }
 
 /**

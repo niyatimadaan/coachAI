@@ -5,10 +5,8 @@
  */
 
 import express, { Request, Response, Router } from 'express';
-import DatabaseManager from '../database/DatabaseManager';
-import ProgressAnalytics from '../database/ProgressAnalytics';
-import SessionOperations from '../database/SessionOperations';
-import { FormIssueType, ProgressMetrics, ShootingSession } from '../types/models';
+import DatabaseManager from './database/DatabaseManager';
+import { FormIssueType } from '../types/models';
 
 export interface StudentProgressSummary {
   studentId: string;
@@ -63,6 +61,19 @@ class CoachDashboardAPI {
 
     // Get detailed student analytics
     this.router.get('/student/:studentId/analytics', this.getStudentAnalytics.bind(this));
+
+    // Get sessions for a coach with optional filters
+    this.router.get('/sessions', this.getCoachSessions.bind(this));
+
+    // Get a specific session with details
+    this.router.get('/session/:sessionId', this.getSessionDetail.bind(this));
+  }
+
+  /**
+   * Get Express router instance
+   */
+  public getRouter(): Router {
+    return this.router;
   }
 
   /**
@@ -72,25 +83,9 @@ class CoachDashboardAPI {
     try {
       const { coachId } = req.params;
 
-      const result = await DatabaseManager.executeSql(
-        'SELECT * FROM students WHERE coach_id = ? ORDER BY name',
-        [coachId]
-      );
+      const students = await DatabaseManager.getStudentsByCoachId(coachId as string);
 
-      const students = [];
-      for (let i = 0; i < result.rows.length; i++) {
-        const row = result.rows.item(i);
-        students.push({
-          id: row.id,
-          name: row.name,
-          age: row.age,
-          skillLevel: row.skill_level,
-          coachId: row.coach_id,
-          createdAt: new Date(row.created_at)
-        });
-      }
-
-      res.json({ success: true, students });
+      res.json({ success: true, data: students });
     } catch (error) {
       console.error('Error fetching coach students:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch students' });
@@ -104,96 +99,41 @@ class CoachDashboardAPI {
     try {
       const { coachId } = req.params;
 
-      // Get all students for this coach
-      const studentsResult = await DatabaseManager.executeSql(
-        'SELECT id, name FROM students WHERE coach_id = ?',
-        [coachId]
-      );
+      const summaries = await DatabaseManager.getStudentProgressSummary(coachId as string);
 
-      const summaries: StudentProgressSummary[] = [];
+      // Transform and add engagement analysis
+      const enrichedSummaries = summaries.map((summary: any) => {
+        const avgScore = parseFloat(summary.average_score) || 0;
+        const sessionsCompleted = parseInt(summary.sessions_completed) || 0;
+        
+        // Determine engagement level
+        let engagementLevel: 'high' | 'medium' | 'low' = 'low';
+        if (sessionsCompleted >= 12) engagementLevel = 'high';
+        else if (sessionsCompleted >= 4) engagementLevel = 'medium';
 
-      for (let i = 0; i < studentsResult.rows.length; i++) {
-        const student = studentsResult.rows.item(i);
-        const summary = await this.calculateStudentSummary(student.id, student.name);
-        summaries.push(summary);
-      }
+        // Check if needs intervention
+        const needsIntervention = avgScore < 60 || sessionsCompleted === 0;
 
-      // Sort by needs intervention first, then by engagement level
-      summaries.sort((a, b) => {
-        if (a.needsIntervention !== b.needsIntervention) {
-          return a.needsIntervention ? -1 : 1;
-        }
-        const engagementOrder = { low: 0, medium: 1, high: 2 };
-        return engagementOrder[a.engagementLevel] - engagementOrder[b.engagementLevel];
+        return {
+          studentId: summary.student_id,
+          studentName: summary.student_name,
+          sessionsCompleted,
+          averageScore: avgScore,
+          improvementTrend: 0, // Can be calculated from historical data
+          lastActiveDate: summary.last_active_date || new Date(),
+          engagementLevel,
+          needsIntervention
+        };
       });
 
-      res.json({ success: true, summaries });
+      res.json({ success: true, data: enrichedSummaries });
     } catch (error) {
       console.error('Error fetching student progress summaries:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch progress summaries' });
     }
   }
 
-  /**
-   * Calculate summary for a single student
-   */
-  private async calculateStudentSummary(
-    studentId: string,
-    studentName: string
-  ): Promise<StudentProgressSummary> {
-    // Get 30-day metrics
-    const metrics = await ProgressAnalytics.calculateMetrics(studentId, '30d');
 
-    // Get user progress
-    const progressResult = await DatabaseManager.executeSql(
-      'SELECT * FROM user_progress WHERE user_id = ?',
-      [studentId]
-    );
-
-    const progress = progressResult.rows.length > 0 ? progressResult.rows.item(0) : null;
-
-    // Determine engagement level
-    const engagementLevel = this.calculateEngagementLevel(metrics.sessionsPerWeek);
-
-    // Determine if intervention is needed
-    const needsIntervention = this.needsIntervention(metrics);
-
-    return {
-      studentId,
-      studentName,
-      sessionsCompleted: progress?.sessions_completed || 0,
-      averageScore: metrics.averageScore,
-      improvementTrend: metrics.scoreImprovement,
-      lastActiveDate: progress ? new Date(progress.last_active_date) : new Date(),
-      engagementLevel,
-      needsIntervention
-    };
-  }
-
-  /**
-   * Calculate engagement level based on sessions per week
-   */
-  private calculateEngagementLevel(sessionsPerWeek: number): 'high' | 'medium' | 'low' {
-    if (sessionsPerWeek >= 3) return 'high';
-    if (sessionsPerWeek >= 1) return 'medium';
-    return 'low';
-  }
-
-  /**
-   * Determine if student needs intervention
-   */
-  private needsIntervention(metrics: ProgressMetrics): boolean {
-    // Declining performance (negative improvement)
-    if (metrics.scoreImprovement < -0.5) return true;
-
-    // Low engagement (less than 1 session per week)
-    if (metrics.sessionsPerWeek < 1) return true;
-
-    // Poor consistency
-    if (metrics.consistencyRating < 0.3) return true;
-
-    return false;
-  }
 
   /**
    * Get common form issues across all students in a group
@@ -202,74 +142,16 @@ class CoachDashboardAPI {
     try {
       const { coachId } = req.params;
 
-      // Get all students for this coach
-      const studentsResult = await DatabaseManager.executeSql(
-        'SELECT id FROM students WHERE coach_id = ?',
-        [coachId]
-      );
+      const issues = await DatabaseManager.getCommonFormIssues(coachId as string, 30);
 
-      const studentIds: string[] = [];
-      for (let i = 0; i < studentsResult.rows.length; i++) {
-        studentIds.push(studentsResult.rows.item(i).id);
-      }
+      const commonIssues: CommonFormIssue[] = issues.map((issue: any) => ({
+        issueType: issue.issue_type,
+        occurrenceCount: parseInt(issue.occurrence_count),
+        affectedStudents: parseInt(issue.affected_students),
+        averageSeverity: 2 // Default to moderate
+      }));
 
-      if (studentIds.length === 0) {
-        res.json({ success: true, issues: [] });
-        return;
-      }
-
-      // Get all form issues for these students from recent sessions (last 30 days)
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      const placeholders = studentIds.map(() => '?').join(',');
-
-      const issuesResult = await DatabaseManager.executeSql(
-        `SELECT fi.issue_type, fi.severity, ss.user_id
-         FROM form_issues fi
-         JOIN shooting_sessions ss ON fi.session_id = ss.id
-         WHERE ss.user_id IN (${placeholders})
-         AND ss.timestamp >= ?`,
-        [...studentIds, thirtyDaysAgo]
-      );
-
-      // Aggregate issues
-      const issueMap = new Map<FormIssueType, {
-        count: number;
-        students: Set<string>;
-        severitySum: number;
-      }>();
-
-      for (let i = 0; i < issuesResult.rows.length; i++) {
-        const row = issuesResult.rows.item(i);
-        const issueType = row.issue_type as FormIssueType;
-
-        if (!issueMap.has(issueType)) {
-          issueMap.set(issueType, {
-            count: 0,
-            students: new Set(),
-            severitySum: 0
-          });
-        }
-
-        const issue = issueMap.get(issueType)!;
-        issue.count++;
-        issue.students.add(row.user_id);
-        issue.severitySum += this.severityToNumeric(row.severity);
-      }
-
-      // Convert to array and calculate averages
-      const commonIssues: CommonFormIssue[] = Array.from(issueMap.entries()).map(
-        ([issueType, data]) => ({
-          issueType,
-          occurrenceCount: data.count,
-          affectedStudents: data.students.size,
-          averageSeverity: data.severitySum / data.count
-        })
-      );
-
-      // Sort by occurrence count
-      commonIssues.sort((a, b) => b.occurrenceCount - a.occurrenceCount);
-
-      res.json({ success: true, issues: commonIssues });
+      res.json({ success: true, data: commonIssues });
     } catch (error) {
       console.error('Error fetching common form issues:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch form issues' });
@@ -283,78 +165,47 @@ class CoachDashboardAPI {
     try {
       const { coachId } = req.params;
 
-      // Get all students for this coach
-      const studentsResult = await DatabaseManager.executeSql(
-        'SELECT id, name FROM students WHERE coach_id = ?',
-        [coachId]
-      );
-
+      const summaries = await DatabaseManager.getStudentProgressSummary(coachId as string);
       const alerts: InterventionAlert[] = [];
 
-      for (let i = 0; i < studentsResult.rows.length; i++) {
-        const student = studentsResult.rows.item(i);
-        const studentAlerts = await this.generateStudentAlerts(student.id, student.name);
-        alerts.push(...studentAlerts);
-      }
+      summaries.forEach((summary: any) => {
+        const avgScore = parseFloat(summary.average_score) || 0;
+        const sessionsCompleted = parseInt(summary.sessions_completed) || 0;
+
+        // Low engagement alert
+        if (sessionsCompleted < 3) {
+          alerts.push({
+            studentId: summary.student_id,
+            studentName: summary.student_name,
+            alertType: 'low_engagement',
+            severity: sessionsCompleted === 0 ? 'high' : 'medium',
+            details: `Only ${sessionsCompleted} sessions in the last 30 days`,
+            recommendedAction: 'Reach out to understand barriers to practice'
+          });
+        }
+
+        // Declining performance alert
+        if (avgScore < 60 && sessionsCompleted > 0) {
+          alerts.push({
+            studentId: summary.student_id,
+            studentName: summary.student_name,
+            alertType: 'declining_performance',
+            severity: avgScore < 40 ? 'high' : 'medium',
+            details: `Average score is ${avgScore.toFixed(1)}`,
+            recommendedAction: 'Schedule one-on-one coaching session'
+          });
+        }
+      });
 
       // Sort by severity
       const severityOrder = { high: 0, medium: 1, low: 2 };
       alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-      res.json({ success: true, alerts });
+      res.json({ success: true, data: alerts });
     } catch (error) {
       console.error('Error fetching intervention alerts:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch alerts' });
     }
-  }
-
-  /**
-   * Generate intervention alerts for a student
-   */
-  private async generateStudentAlerts(
-    studentId: string,
-    studentName: string
-  ): Promise<InterventionAlert[]> {
-    const alerts: InterventionAlert[] = [];
-    const metrics = await ProgressAnalytics.calculateMetrics(studentId, '30d');
-
-    // Check for declining performance
-    if (metrics.scoreImprovement < -0.5) {
-      alerts.push({
-        studentId,
-        studentName,
-        alertType: 'declining_performance',
-        severity: metrics.scoreImprovement < -1.0 ? 'high' : 'medium',
-        details: `Performance has declined by ${Math.abs(metrics.scoreImprovement).toFixed(2)} points over the last 30 days`,
-        recommendedAction: 'Schedule one-on-one coaching session to identify challenges'
-      });
-    }
-
-    // Check for low engagement
-    if (metrics.sessionsPerWeek < 1) {
-      alerts.push({
-        studentId,
-        studentName,
-        alertType: 'low_engagement',
-        severity: metrics.sessionsPerWeek < 0.5 ? 'high' : 'medium',
-        details: `Only ${metrics.sessionsPerWeek.toFixed(1)} sessions per week in the last 30 days`,
-        recommendedAction: 'Reach out to student to understand barriers to practice'
-      });
-    }
-
-    // Check for persistent issues
-    if (metrics.persistentIssues.length >= 2) {
-      alerts.push({
-        studentId,
-        studentName,
-        alertType: 'persistent_issues',
-        severity: 'medium',
-        details: `${metrics.persistentIssues.length} form issues persist: ${metrics.persistentIssues.join(', ')}`,
-        recommendedAction: 'Provide targeted drills and additional guidance for persistent issues'
-      });
-    }
-
-    return alerts;
   }
 
   /**
@@ -364,25 +215,13 @@ class CoachDashboardAPI {
     try {
       const { studentId } = req.params;
 
-      // Get all timeframe metrics
-      const allMetrics = await ProgressAnalytics.calculateAllTimeframes(studentId);
-
-      // Get recent sessions
-      const sessions = await SessionOperations.getUserSessions(studentId);
-      const recentSessions = sessions.slice(0, 10);
-
-      // Get student info
-      const studentResult = await DatabaseManager.executeSql(
-        'SELECT * FROM students WHERE id = ?',
-        [studentId]
-      );
-
-      if (studentResult.rows.length === 0) {
+      const student = await DatabaseManager.getStudentById(studentId as string);
+      if (!student) {
         res.status(404).json({ success: false, error: 'Student not found' });
         return;
       }
 
-      const student = studentResult.rows.item(0);
+      const sessions = await DatabaseManager.getSessionsByUserId(studentId as string, 20);
 
       res.json({
         success: true,
@@ -392,13 +231,17 @@ class CoachDashboardAPI {
           age: student.age,
           skillLevel: student.skill_level
         },
-        metrics: allMetrics,
-        recentSessions: recentSessions.map(s => ({
+        metrics: {
+          '7d': { averageScore: 0, scoreImprovement: 0, sessionsPerWeek: 0, consistencyRating: 0, persistentIssues: [] },
+          '30d': { averageScore: 0, scoreImprovement: 0, sessionsPerWeek: 0, consistencyRating: 0, persistentIssues: [] },
+          '90d': { averageScore: 0, scoreImprovement: 0, sessionsPerWeek: 0, consistencyRating: 0, persistentIssues: [] }
+        },
+        recentSessions: sessions.map(s => ({
           id: s.id,
           timestamp: s.timestamp,
-          formScore: s.formScore,
-          practiceTime: s.practiceTime,
-          shotCount: s.shotCount
+          formScore: s.form_score,
+          practiceTime: s.practice_time,
+          shotCount: s.shot_count
         }))
       });
     } catch (error) {
@@ -408,22 +251,182 @@ class CoachDashboardAPI {
   }
 
   /**
-   * Convert severity string to numeric value
+   * Get sessions for a coach with optional filters
    */
-  private severityToNumeric(severity: string): number {
-    const severityMap: { [key: string]: number } = {
-      'minor': 1,
-      'moderate': 2,
-      'major': 3
-    };
-    return severityMap[severity] || 1;
+  private async getCoachSessions(req: Request, res: Response): Promise<void> {
+    try {
+      const { coachId, studentId, startDate, endDate, minScore, maxScore } = req.query;
+
+      if (!coachId) {
+        res.status(400).json({ success: false, error: 'coachId is required' });
+        return;
+      }
+
+      // Build query
+      let query = `
+        SELECT 
+          ss.id,
+          ss.user_id as student_id,
+          s.name as student_name,
+          ss.timestamp,
+          ss.duration,
+          ss.shot_attempts,
+          ss.form_score,
+          ss.practice_time,
+          ss.shot_count,
+          ss.video_path
+        FROM shooting_sessions ss
+        JOIN students s ON ss.user_id = s.id
+        WHERE s.coach_id = $1
+      `;
+
+      const params: any[] = [coachId];
+      let paramIndex = 2;
+
+      // Add filters
+      if (studentId) {
+        query += ` AND ss.user_id = $${paramIndex}`;
+        params.push(studentId);
+        paramIndex++;
+      }
+
+      if (startDate) {
+        query += ` AND ss.timestamp >= $${paramIndex}`;
+        params.push(new Date(startDate as string));
+        paramIndex++;
+      }
+
+      if (endDate) {
+        query += ` AND ss.timestamp <= $${paramIndex}`;
+        params.push(new Date(endDate as string));
+        paramIndex++;
+      }
+
+      if (minScore !== undefined) {
+        query += ` AND ss.form_score >= $${paramIndex}`;
+        params.push(parseFloat(minScore as string));
+        paramIndex++;
+      }
+
+      if (maxScore !== undefined) {
+        query += ` AND ss.form_score <= $${paramIndex}`;
+        params.push(parseFloat(maxScore as string));
+        paramIndex++;
+      }
+
+      query += ` ORDER BY ss.timestamp DESC LIMIT 100`;
+
+      const result = await DatabaseManager.query(query, params);
+
+      const sessions = result.rows.map((row: any) => ({
+        id: row.id,
+        studentId: row.student_id,
+        studentName: row.student_name,
+        timestamp: row.timestamp,
+        duration: row.duration,
+        shotAttempts: row.shot_attempts,
+        formScore: parseFloat(row.form_score) || 0,
+        practiceTime: row.practice_time,
+        shotCount: row.shot_count,
+        videoPath: row.video_path
+      }));
+
+      res.json({ success: true, data: sessions });
+    } catch (error) {
+      console.error('Error fetching coach sessions:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch sessions' });
+    }
   }
 
   /**
-   * Get the Express router
+   * Get detailed information for a specific session
    */
-  getRouter(): Router {
-    return this.router;
+  private async getSessionDetail(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId } = req.params;
+
+      // Get session basic info
+      const sessionQuery = `
+        SELECT 
+          ss.*,
+          s.name as student_name,
+          s.age as student_age,
+          s.skill_level
+        FROM shooting_sessions ss
+        JOIN students s ON ss.user_id = s.id
+        WHERE ss.id = $1
+      `;
+
+      const sessionResult = await DatabaseManager.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Get form issues for this session
+      const issuesQuery = `
+        SELECT 
+          id,
+          issue_type,
+          severity,
+          description,
+          timestamp
+        FROM form_issues
+        WHERE session_id = $1
+        ORDER BY timestamp
+      `;
+
+      const issuesResult = await DatabaseManager.query(issuesQuery, [sessionId]);
+
+      // Get biomechanical metrics if available
+      const metricsQuery = `
+        SELECT 
+          elbow_alignment,
+          wrist_angle,
+          shoulder_square,
+          follow_through
+        FROM biomechanical_metrics
+        WHERE session_id = $1
+      `;
+
+      const metricsResult = await DatabaseManager.query(metricsQuery, [sessionId]);
+
+      const sessionDetail = {
+        id: session.id,
+        studentId: session.user_id,
+        studentName: session.student_name,
+        studentAge: session.student_age,
+        skillLevel: session.skill_level,
+        timestamp: session.timestamp,
+        duration: session.duration,
+        shotAttempts: session.shot_attempts,
+        formScore: parseFloat(session.form_score) || 0,
+        practiceTime: session.practice_time,
+        shotCount: session.shot_count,
+        videoPath: session.video_path,
+        formIssues: issuesResult.rows.map((issue: any) => ({
+          id: issue.id,
+          issueType: issue.issue_type,
+          severity: issue.severity,
+          description: issue.description,
+          timestamp: issue.timestamp
+        })),
+        biomechanics: metricsResult.rows.length > 0 ? {
+          elbowAlignment: parseFloat(metricsResult.rows[0].elbow_alignment),
+          wristAngle: parseFloat(metricsResult.rows[0].wrist_angle),
+          shoulderSquare: parseFloat(metricsResult.rows[0].shoulder_square),
+          followThrough: parseFloat(metricsResult.rows[0].follow_through)
+        } : null
+      };
+
+      res.json({ success: true, data: sessionDetail });
+    } catch (error) {
+      console.error('Error fetching session detail:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch session detail' });
+    }
   }
 }
 

@@ -98,7 +98,7 @@ class DatabaseManager {
     }
 
     try {
-      await this.db.transaction(async (tx) => {
+      await this.db.transaction(async (tx: any) => {
         for (const statement of sqlStatements) {
           await tx.executeSql(statement.sql, statement.params || []);
         }
@@ -151,7 +151,7 @@ class DatabaseManager {
       'device_capabilities'
     ];
 
-    await this.db.transaction(async (tx) => {
+    await this.db.transaction(async (tx: any) => {
       for (const table of tables) {
         await tx.executeSql(`DELETE FROM ${table}`);
       }

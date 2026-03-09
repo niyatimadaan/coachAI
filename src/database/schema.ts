@@ -166,6 +166,41 @@ export const CREATE_TABLES = {
       timestamp INTEGER NOT NULL,
       FOREIGN KEY (user_id) REFERENCES students(id) ON DELETE CASCADE
     );
+  `,
+  
+  drill_suggestions: `
+    CREATE TABLE IF NOT EXISTS drill_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      issue TEXT NOT NULL,
+      drill_name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      instructions TEXT NOT NULL,
+      sets TEXT NOT NULL,
+      focus_points TEXT NOT NULL,
+      common_mistakes TEXT NOT NULL,
+      difficulty TEXT CHECK(difficulty IN ('beginner', 'intermediate', 'advanced')),
+      ai_generated INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES shooting_sessions(id) ON DELETE CASCADE
+    );
+  `,
+  
+  practice_routines: `
+    CREATE TABLE IF NOT EXISTS practice_routines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL UNIQUE,
+      priority_issues TEXT NOT NULL,
+      warmup TEXT NOT NULL,
+      main_drills TEXT NOT NULL,
+      cooldown TEXT NOT NULL,
+      total_duration TEXT NOT NULL,
+      progress_indicators TEXT NOT NULL,
+      motivational_message TEXT,
+      ai_generated INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES shooting_sessions(id) ON DELETE CASCADE
+    );
   `
 };
 
@@ -204,5 +239,15 @@ export const CREATE_INDEXES = {
   privacy_events_user: `
     CREATE INDEX IF NOT EXISTS idx_privacy_events_user 
     ON privacy_events(user_id, timestamp DESC);
+  `,
+  
+  drill_suggestions_session: `
+    CREATE INDEX IF NOT EXISTS idx_drill_suggestions_session 
+    ON drill_suggestions(session_id);
+  `,
+  
+  practice_routines_session: `
+    CREATE INDEX IF NOT EXISTS idx_practice_routines_session 
+    ON practice_routines(session_id);
   `
 };

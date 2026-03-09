@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { studentClient } from '@/lib/api/student'
 import type { Session } from '@/lib/types/models'
 import { LoadingSpinner, EmptyState, Badge } from '@/components/ui/Cards'
+import StudentSessionDetailModal from '@/components/student/StudentSessionDetailModal'
 
 export default function MySessionsPage() {
   const { user } = useAuth()
@@ -12,6 +13,7 @@ export default function MySessionsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
     if (user?.id) {
@@ -57,6 +59,16 @@ export default function MySessionsPage() {
     if (score >= 80) return { label: 'Good', variant: 'primary' as const }
     if (score >= 70) return { label: 'Fair', variant: 'warning' as const }
     return { label: 'Needs Work', variant: 'danger' as const }
+  }
+
+  const handleViewDetails = (session: Session, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedSession(session)
+    setIsModalOpen(true)
+  }
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
   }
 
   return (
@@ -209,11 +221,11 @@ export default function MySessionsPage() {
                             </div>
                           </div>
                           <div className="mt-4 flex gap-2">
-                            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                              View Analysis
-                            </button>
-                            <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
-                              Watch Video
+                            <button 
+                              onClick={(e) => handleViewDetails(session, e)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                            >
+                              View Details
                             </button>
                           </div>
                         </div>
@@ -224,6 +236,15 @@ export default function MySessionsPage() {
               })}
           </ul>
         </div>
+      )}
+
+      {/* Session Detail Modal */}
+      {selectedSession && (
+        <StudentSessionDetailModal
+          session={selectedSession}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   )

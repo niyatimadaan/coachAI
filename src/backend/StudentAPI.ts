@@ -111,15 +111,15 @@ class StudentAPI {
       // Get biomechanical metrics
       const metricsQuery = `
         SELECT 
-          id,
           session_id as "sessionId",
-          metric_name as "metricName",
-          value,
-          status,
-          timestamp
+          elbow_alignment as "elbowAlignment",
+          wrist_angle as "wristAngle",
+          shoulder_square as "shoulderSquare",
+          follow_through as "followThrough",
+          body_balance as "bodyBalance"
         FROM biomechanical_metrics
         WHERE session_id = $1
-        ORDER BY timestamp DESC
+        LIMIT 1
       `;
 
       const metricsResult = await DatabaseManager.query(metricsQuery, [sessionId]);
@@ -132,7 +132,6 @@ class StudentAPI {
           issue_type as "issueType",
           severity,
           description,
-          recommendation,
           timestamp
         FROM form_issues
         WHERE session_id = $1
@@ -141,8 +140,18 @@ class StudentAPI {
 
       const issuesResult = await DatabaseManager.query(issuesQuery, [sessionId]);
 
+      // Convert DECIMAL types to numbers (PostgreSQL returns them as strings)
+      const biomechanicalMetrics = metricsResult.rows.length > 0 ? {
+        sessionId: metricsResult.rows[0].sessionId,
+        elbowAlignment: parseFloat(metricsResult.rows[0].elbowAlignment),
+        wristAngle: parseFloat(metricsResult.rows[0].wristAngle),
+        shoulderSquare: parseFloat(metricsResult.rows[0].shoulderSquare),
+        followThrough: parseFloat(metricsResult.rows[0].followThrough),
+        bodyBalance: parseFloat(metricsResult.rows[0].bodyBalance),
+      } : null;
+
       const analytics = {
-        biomechanicalMetrics: metricsResult.rows,
+        biomechanicalMetrics,
         formIssues: issuesResult.rows,
       };
 
@@ -152,7 +161,6 @@ class StudentAPI {
       res.status(500).json({ success: false, error: 'Failed to fetch session analytics' });
     }
   }
-
   /**
    * GET /api/student/report?userId=xxx
    * Get comprehensive personal performance report for a student

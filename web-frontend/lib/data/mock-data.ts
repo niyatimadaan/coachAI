@@ -35,11 +35,14 @@ export function initializeMockData() {
   const mockSessions: SessionDetail[] = [
     {
       id: 'session_1',
-      userId: 'student_1',
+      studentId: 'student_1',
+      studentName: 'John Doe',
       timestamp: Date.now() - 86400000, // 1 day ago
       formScore: 85,
       practiceTime: 45,
       shotCount: 120,
+      duration: 45,
+      videoPath: '/uploads/videos/session_1.mp4',
       videoUrl: 'https://example.com/video1.mp4',
       formIssues: [
         {
@@ -54,11 +57,14 @@ export function initializeMockData() {
     },
     {
       id: 'session_2',
-      userId: 'student_2',
+      studentId: 'student_2',
+      studentName: 'Jane Smith',
       timestamp: Date.now() - 172800000, // 2 days ago
       formScore: 72,
       practiceTime: 30,
       shotCount: 80,
+      duration: 30,
+      videoPath: '/uploads/videos/session_2.mp4',
       formIssues: [
         {
           issueType: 'follow_through',
@@ -83,7 +89,7 @@ export function getStudentsByCoachId(coachId: string): Student[] {
 }
 
 export function getSessionsByUserId(userId: string): SessionDetail[] {
-  return Array.from(sessions.values()).filter(s => s.userId === userId)
+  return Array.from(sessions.values()).filter(s => s.studentId === userId)
 }
 
 export function getSessionById(sessionId: string): SessionDetail | undefined {
@@ -129,7 +135,7 @@ export function getCommonFormIssues(coachId: string): CommonFormIssue[] {
       }
       const data = issueMap.get(key)!
       data.count++
-      data.students.add(session.userId)
+      data.students.add(session.studentId)
       data.severities.push(issue.severity === 'major' ? 3 : issue.severity === 'moderate' ? 2 : 1)
     })
   })

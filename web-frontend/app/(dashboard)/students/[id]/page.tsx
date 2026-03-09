@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
 import { StudentDetailView } from './StudentDetailView'
 
+export const dynamic = 'force-dynamic'
+
 interface PageProps {
   params: Promise<{
     id: string

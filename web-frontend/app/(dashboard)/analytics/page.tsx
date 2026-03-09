@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
 import { AnalyticsDashboard } from './AnalyticsDashboard'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata = {
   title: 'Analytics | CoachAI',
   description: 'View aggregate analytics and insights across all students',

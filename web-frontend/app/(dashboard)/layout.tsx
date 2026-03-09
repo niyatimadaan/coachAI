@@ -43,6 +43,7 @@ export default function DashboardLayout({
     { href: '/dashboard', label: 'My Dashboard' },
     { href: '/my-sessions', label: 'My Sessions' },
     { href: '/my-progress', label: 'My Progress' },
+    { href: '/my-report', label: 'My Report' },
     { href: '/upload-video', label: 'Upload Video' },
   ]
 

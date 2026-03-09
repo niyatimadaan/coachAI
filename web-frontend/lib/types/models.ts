@@ -37,11 +37,14 @@ export interface StudentProgressSummary {
 // Sessions
 export interface Session {
   id: string
-  userId: string
+  studentId: string
   timestamp: number
   formScore: number
+  studentName: string
+  videoPath: string
   practiceTime: number
   shotCount: number
+  duration: number
 }
 
 export interface SessionSummary {

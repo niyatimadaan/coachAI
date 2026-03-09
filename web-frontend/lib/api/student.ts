@@ -71,7 +71,7 @@ class StudentAPIClient {
    */
   async getMyStats(studentId: string): Promise<StudentStats> {
     try {
-      const sessions = await this.fetch<Session[]>(`/api/coach/sessions?studentId=${studentId}`)
+      const sessions = await this.fetch<Session[]>(`/api/student/sessions?userId=${studentId}`)
       
       if (!sessions || sessions.length === 0) {
         return {
@@ -116,7 +116,7 @@ class StudentAPIClient {
    * Get all sessions for a student
    */
   async getMySessions(studentId: string): Promise<Session[]> {
-    return this.fetch<Session[]>(`/api/coach/sessions?studentId=${studentId}`)
+    return this.fetch<Session[]>(`/api/student/sessions?userId=${studentId}`)
   }
 
   /**
@@ -124,7 +124,7 @@ class StudentAPIClient {
    */
   async getSessionMetrics(sessionId: string): Promise<BiomechanicalMetric[]> {
     try {
-      const result = await this.fetch<any>(`/api/coach/student/${sessionId}/analytics`)
+      const result = await this.fetch<any>(`/api/student/sessions/${sessionId}/analytics`)
       return result.biomechanicalMetrics || []
     } catch (error) {
       console.error('Error fetching session metrics:', error)
@@ -137,7 +137,7 @@ class StudentAPIClient {
    */
   async getSessionIssues(sessionId: string): Promise<FormIssue[]> {
     try {
-      const result = await this.fetch<any>(`/api/coach/student/${sessionId}/analytics`)
+      const result = await this.fetch<any>(`/api/student/sessions/${sessionId}/analytics`)
       return result.formIssues || []
     } catch (error) {
       console.error('Error fetching session issues:', error)

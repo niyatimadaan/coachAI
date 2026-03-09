@@ -214,6 +214,17 @@ class VideoAnalysisService {
         console.log(`   Shot attempts: ${shotAttempts}`);
         console.log(`   Form score: ${numericScore}`);
         
+        // Get the actual student ID from the user ID
+        // studentId parameter might be users.id, we need students.id
+        const actualStudentId = await DatabaseManager.getStudentIdByUserId(studentId);
+        
+        if (!actualStudentId) {
+          throw new Error(`No student record found for user ID: ${studentId}. Student record may not have been created during signup.`);
+        }
+        
+        console.log(`   User ID: ${studentId}`);
+        console.log(`   Student DB ID: ${actualStudentId}`);
+        
         const sessionInsertResult = await DatabaseManager.query(
           `INSERT INTO shooting_sessions 
            (id, user_id, timestamp, duration, shot_attempts, video_path, form_score, practice_time, shot_count)
@@ -221,7 +232,7 @@ class VideoAnalysisService {
            RETURNING id`,
           [
             sessionId,
-            studentId,
+            actualStudentId,  // Use the student table ID, not the user table ID
             new Date(),
             duration,
             shotAttempts,

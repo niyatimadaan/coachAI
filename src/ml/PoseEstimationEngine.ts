@@ -359,7 +359,7 @@ export async function processVideoForPose(
         // Extract video frames as buffers
         const frameBuffers = await extractFramesAsBuffers(videoPath, {
           fps: parseInt(process.env.VIDEO_FRAME_EXTRACTION_FPS || '10'),
-          maxFrames: 20,
+          maxFrames: 30,
           format: 'jpg',
           quality: 85,
         });

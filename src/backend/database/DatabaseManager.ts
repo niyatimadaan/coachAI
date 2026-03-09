@@ -73,7 +73,18 @@ class DatabaseManager {
       [email, name, passwordHash, role]
     );
 
-    return result.rows[0];
+    const user = result.rows[0];
+
+    // If the user is a student, automatically create a student record
+    if (role === 'student') {
+      await db.query(
+        `INSERT INTO students (user_id, name, age, skill_level, coach_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, name, 18, 'beginner', null] // Default age 18, beginner level, no coach yet
+      );
+    }
+
+    return user;
   }
 
   /**
@@ -187,6 +198,19 @@ class DatabaseManager {
     );
 
     return result.rows[0] || null;
+  }
+
+  /**
+   * Get student ID from user ID
+   * Returns the student.id for a given user_id
+   */
+  async getStudentIdByUserId(userId: string): Promise<string | null> {
+    const result = await db.query<{ id: string }>(
+      'SELECT id FROM students WHERE user_id = $1',
+      [userId]
+    );
+
+    return result.rows[0]?.id || null;
   }
 
   /**

@@ -194,9 +194,16 @@ class S3StorageService {
       const command = new GetObjectCommand({
         Bucket: this.bucket,
         Key: s3Key,
+        ResponseContentType: 'video/mp4',
+        ResponseContentDisposition: 'inline',
       });
 
       const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      
+      // Log URL for debugging (only first part for security)
+      const urlParts = signedUrl.split('?');
+      console.log(`   Generated URL: ${urlParts[0]}?[...signed params]`);
+      
       return signedUrl;
     } catch (error) {
       console.error('S3 signed URL error:', error);

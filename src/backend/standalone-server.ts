@@ -24,6 +24,7 @@ import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import AuthAPI from './AuthAPI';
 import CoachDashboardAPI from './CoachDashboardAPI';
+import StudentAPI from './StudentAPI';
 import VideoUploadAPI from './VideoUploadAPI';
 import DrillsAPI from './DrillsAPI';
 import DatabaseManager from './database/DatabaseManager';
@@ -57,6 +58,9 @@ app.use('/api/auth', AuthAPI.getRouter());
 
 // Mount coach dashboard API routes
 app.use('/api/coach', CoachDashboardAPI.getRouter());
+
+// Mount student API routes
+app.use('/api/student', StudentAPI.getRouter());
 
 // Mount video upload and analysis API routes
 app.use('/api/video', VideoUploadAPI.getRouter());

@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import VideoAnalysisService from './services/VideoAnalysisService';
 import S3StorageService from './services/S3StorageService';
+import DatabaseManager from './database/DatabaseManager';
 
 class VideoUploadAPI {
   private router: Router;
@@ -225,13 +226,38 @@ class VideoUploadAPI {
         return;
       }
 
-      // Get s3Key from database
-      const result = await VideoAnalysisService.getVideoUrl(sessionId);
+      console.log(`📺 Getting video URL for session: ${sessionId}`);
+
+      // Get video_path from database
+      const dbResult = await DatabaseManager.query(
+        'SELECT video_path FROM shooting_sessions WHERE id = $1',
+        [sessionId]
+      );
+
+      if (dbResult.rows.length === 0) {
+        console.error('   ❌ Session not found');
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
+
+      const videoPath = dbResult.rows[0].video_path;
+      
+      if (!videoPath) {
+        console.error('   ❌ No video path for this session');
+        res.status(404).json({ success: false, error: 'No video available for this session' });
+        return;
+      }
+
+      console.log(`   Video path from DB: ${videoPath}`);
+
+      // Get signed URL using the video_path (S3 key)
+      const signedUrl = await VideoAnalysisService.getVideoUrl(videoPath);
+      console.log(`   ✅ Generated signed URL`);
 
       res.json({
         success: true,
         data: {
-          url: result,
+          url: signedUrl,
           expiresIn: 3600, // 1 hour
         },
       });

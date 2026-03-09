@@ -187,8 +187,8 @@ export default function SessionManager() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {sessions.map((session) => {
-                  const student = students.find(s => s.id === session.userId)
+                {sessions.map((session : Session) => {
+                  const student = students.find(s => s.id === session.studentId)
                   return (
                     <tr key={session.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

@@ -116,7 +116,7 @@ export default function MySessionsPage() {
             {sessions
               .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
               .map((session) => {
-                const scoreBadge = getScoreBadge(session.formScore || 0)
+                const scoreBadge = getScoreBadge(Number(session.formScore) || 0)
                 return (
                   <li
                     key={session.id}
@@ -162,8 +162,8 @@ export default function MySessionsPage() {
                         </div>
                         <div className="ml-6 flex items-center">
                           <div className="text-right mr-4">
-                            <p className={`text-3xl font-bold ${getScoreColor(session.formScore || 0)}`}>
-                              {(session.formScore || 0).toFixed(1)}
+                            <p className={`text-3xl font-bold ${getScoreColor(Number(session.formScore) || 0)}`}>
+                              {Number(session.formScore || 0).toFixed(1)}
                             </p>
                             <p className="text-xs text-gray-500">Form Score</p>
                           </div>

@@ -180,54 +180,6 @@ class MLVideoAnalysisService {
       );
     }
 
-    // Save drill suggestions if available
-    if (drillRecommendations) {
-      const now = Date.now();
-      
-      // Save each drill suggestion
-      for (const drill of drillRecommendations.drills) {
-        await DatabaseManager.query(
-          `INSERT INTO drill_suggestions 
-           (session_id, issue, drill_name, description, instructions, sets, 
-            focus_points, common_mistakes, difficulty, ai_generated, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [
-            session.id,
-            drill.issue,
-            drill.drillName,
-            drill.description,
-            JSON.stringify(drill.instructions),
-            drill.sets,
-            JSON.stringify(drill.focusPoints),
-            JSON.stringify(drill.commonMistakes),
-            drill.difficulty,
-            1, // ai_generated = true
-            now,
-          ]
-        );
-      }
-
-      // Save practice routine
-      await DatabaseManager.query(
-        `INSERT INTO practice_routines 
-         (session_id, priority_issues, warmup, main_drills, cooldown, 
-          total_duration, progress_indicators, motivational_message, ai_generated, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          session.id,
-          JSON.stringify(drillRecommendations.priorityIssues),
-          drillRecommendations.practiceRoutine.warmup,
-          drillRecommendations.practiceRoutine.mainDrills,
-          drillRecommendations.practiceRoutine.cooldown,
-          drillRecommendations.practiceRoutine.totalDuration,
-          JSON.stringify(drillRecommendations.progressIndicators),
-          drillRecommendations.motivationalMessage,
-          1, // ai_generated = true
-          now,
-        ]
-      );
-    }
-
     return session.id;
   }
 
@@ -276,11 +228,13 @@ class MLVideoAnalysisService {
       wristAngle: parseFloat(metricsResult.rows[0].wrist_angle),
       shoulderSquare: parseFloat(metricsResult.rows[0].shoulder_square),
       followThrough: parseFloat(metricsResult.rows[0].follow_through),
+      bodyBalance: parseFloat(metricsResult.rows[0].body_balance),
     } : {
       elbowAlignment: 0,
       wristAngle: 0,
       shoulderSquare: 0,
       followThrough: 0,
+      bodyBalance: 0,
     };
 
     return {

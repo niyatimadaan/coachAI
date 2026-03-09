@@ -177,7 +177,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-blue-600">{session.formScore.toFixed(1)}</p>
+                      <p className="text-2xl font-bold text-blue-600">{Number(session.formScore).toFixed(1)}</p>
                       <p className="text-xs text-gray-500">Form Score</p>
                     </div>
                   </div>

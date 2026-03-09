@@ -67,6 +67,9 @@ class CoachDashboardAPI {
 
     // Get a specific session with details
     this.router.get('/session/:sessionId', this.getSessionDetail.bind(this));
+
+    // Get comprehensive team report
+    this.router.get('/reports/:coachId/team', this.getTeamReport.bind(this));
   }
 
   /**
@@ -426,6 +429,200 @@ class CoachDashboardAPI {
     } catch (error) {
       console.error('Error fetching session detail:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch session detail' });
+    }
+  }
+
+  /**
+   * Get comprehensive team report with aggregated stats, charts data, and drill recommendations
+   */
+  private async getTeamReport(req: Request, res: Response): Promise<void> {
+    try {
+      const { coachId } = req.params;
+
+      // Get all students
+      const students = await DatabaseManager.getStudentsByCoachId(coachId as string);
+
+      // Get all sessions for the last 30 days
+      const sessionsQuery = `
+        SELECT 
+          ss.*,
+          s.name as student_name,
+          s.skill_level
+        FROM shooting_sessions ss
+        JOIN students s ON ss.user_id = s.id
+        WHERE s.coach_id = $1 AND ss.timestamp > NOW() - INTERVAL '30 days'
+        ORDER BY ss.timestamp DESC
+      `;
+      const sessionsResult = await DatabaseManager.query(sessionsQuery, [coachId]);
+      const sessions = sessionsResult.rows;
+
+      // Calculate team statistics
+      const totalSessions = sessions.length;
+      const averageScore = sessions.length > 0 
+        ? sessions.reduce((sum: number, s: any) => sum + parseFloat(s.form_score || 0), 0) / sessions.length 
+        : 0;
+
+      // Get form issues breakdown
+      const issuesQuery = `
+        SELECT 
+          fi.issue_type,
+          fi.severity,
+          COUNT(*) as count,
+          COUNT(DISTINCT ss.user_id) as affected_students
+        FROM form_issues fi
+        JOIN shooting_sessions ss ON fi.session_id = ss.id
+        JOIN students s ON ss.user_id = s.id
+        WHERE s.coach_id = $1 AND ss.timestamp > NOW() - INTERVAL '30 days'
+        GROUP BY fi.issue_type, fi.severity
+        ORDER BY count DESC
+      `;
+      const issuesResult = await DatabaseManager.query(issuesQuery, [coachId]);
+      const formIssues = issuesResult.rows;
+
+      // Get biomechanical metrics aggregated
+      const metricsQuery = `
+        SELECT 
+          ss.user_id,
+          s.name as student_name,
+          AVG(bm.elbow_alignment) as avg_elbow_alignment,
+          AVG(bm.wrist_angle) as avg_wrist_angle,
+          AVG(bm.shoulder_square) as avg_shoulder_square,
+          AVG(bm.follow_through) as avg_follow_through,
+          AVG(bm.body_balance) as avg_body_balance
+        FROM biomechanical_metrics bm
+        JOIN shooting_sessions ss ON bm.session_id = ss.id
+        JOIN students s ON ss.user_id = s.id
+        WHERE s.coach_id = $1 AND ss.timestamp > NOW() - INTERVAL '30 days'
+        GROUP BY ss.user_id, s.name
+      `;
+      const metricsResult = await DatabaseManager.query(metricsQuery, [coachId]);
+      const biomechanics = metricsResult.rows;
+
+      // Calculate average biomechanics for the team
+      const teamBiomechanics = biomechanics.length > 0 ? {
+        elbowAlignment: biomechanics.reduce((sum: number, m: any) => sum + parseFloat(m.avg_elbow_alignment || 0), 0) / biomechanics.length,
+        wristAngle: biomechanics.reduce((sum: number, m: any) => sum + parseFloat(m.avg_wrist_angle || 0), 0) / biomechanics.length,
+        shoulderSquare: biomechanics.reduce((sum: number, m: any) => sum + parseFloat(m.avg_shoulder_square || 0), 0) / biomechanics.length,
+        followThrough: biomechanics.reduce((sum: number, m: any) => sum + parseFloat(m.avg_follow_through || 0), 0) / biomechanics.length,
+        bodyBalance: biomechanics.reduce((sum: number, m: any) => sum + parseFloat(m.avg_body_balance || 0), 0) / biomechanics.length,
+      } : null;
+
+      // Get score distribution for chart
+      const scoreDistribution = {
+        excellent: sessions.filter((s: any) => parseFloat(s.form_score) >= 90).length,
+        good: sessions.filter((s: any) => parseFloat(s.form_score) >= 75 && parseFloat(s.form_score) < 90).length,
+        average: sessions.filter((s: any) => parseFloat(s.form_score) >= 60 && parseFloat(s.form_score) < 75).length,
+        needsWork: sessions.filter((s: any) => parseFloat(s.form_score) < 60).length,
+      };
+
+      // Get individual student reports
+      const studentReports = await Promise.all(
+        students.map(async (student: any) => {
+          const studentSessions = sessions.filter((s: any) => s.user_id === student.id);
+          const studentAvgScore = studentSessions.length > 0
+            ? studentSessions.reduce((sum: number, s: any) => sum + parseFloat(s.form_score || 0), 0) / studentSessions.length
+            : 0;
+
+          // Get student's top issues
+          const studentIssuesQuery = `
+            SELECT 
+              fi.issue_type,
+              COUNT(*) as count
+            FROM form_issues fi
+            JOIN shooting_sessions ss ON fi.session_id = ss.id
+            WHERE ss.user_id = $1 AND ss.timestamp > NOW() - INTERVAL '30 days'
+            GROUP BY fi.issue_type
+            ORDER BY count DESC
+            LIMIT 3
+          `;
+          const studentIssuesResult = await DatabaseManager.query(studentIssuesQuery, [student.id]);
+
+          return {
+            studentId: student.id,
+            studentName: student.name,
+            age: student.age,
+            skillLevel: student.skill_level,
+            sessionsCompleted: studentSessions.length,
+            averageScore: studentAvgScore,
+            topIssues: studentIssuesResult.rows.map((i: any) => ({
+              type: i.issue_type,
+              count: parseInt(i.count)
+            }))
+          };
+        })
+      );
+
+      // Generate drill recommendations on-demand for top team issues
+      const topIssues = formIssues.slice(0, 5);
+      let recommendedDrills: any[] = [];
+      
+      // Only generate drills if there are issues and AWS AI is available
+      if (topIssues.length > 0) {
+        try {
+          const AWSAIService = (await import('./services/AWSAIService')).default;
+          
+          // Create mock detected issues from team stats
+          const detectedIssues = topIssues.map((issue: any) => ({
+            type: issue.issue_type,
+            severity: issue.severity,
+            description: `${issue.count} occurrences across ${issue.affected_students} students`,
+            timestamp: Date.now()
+          }));
+
+          // Generate team-level drill recommendations
+          const drillRecommendations = await AWSAIService.generateDrillSuggestions(
+            detectedIssues,
+            teamBiomechanics || {
+              elbowAlignment: 0,
+              wristAngle: 0,
+              shoulderSquare: 0,
+              followThrough: 0,
+              bodyBalance: 0,
+            },
+            'intermediate', // Team average level
+            undefined
+          );
+
+          recommendedDrills = drillRecommendations.drills.map((drill: any) => ({
+            drillName: drill.drillName,
+            description: drill.description,
+            instructions: drill.instructions,
+            sets: drill.sets,
+            focusPoints: drill.focusPoints,
+            difficulty: drill.difficulty,
+            targetIssue: drill.issue
+          }));
+        } catch (error) {
+          console.log('⚠️  Could not generate AI drill recommendations, continuing without them');
+        }
+      }
+
+      const teamReport = {
+        summary: {
+          totalStudents: students.length,
+          totalSessions,
+          averageScore: Math.round(averageScore * 10) / 10,
+          activePractitioners: students.filter((s: any) => 
+            sessions.some((sess: any) => sess.user_id === s.id)
+          ).length,
+        },
+        scoreDistribution,
+        formIssues: formIssues.map((issue: any) => ({
+          type: issue.issue_type,
+          severity: issue.severity,
+          count: parseInt(issue.count),
+          affectedStudents: parseInt(issue.affected_students),
+          percentage: Math.round((parseInt(issue.count) / totalSessions) * 100)
+        })),
+        teamBiomechanics,
+        studentReports: studentReports.sort((a, b) => b.averageScore - a.averageScore),
+        recommendedDrills,
+      };
+
+      res.json({ success: true, data: teamReport });
+    } catch (error) {
+      console.error('Error fetching team report:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch team report' });
     }
   }
 }

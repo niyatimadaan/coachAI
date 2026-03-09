@@ -12,7 +12,9 @@ interface SessionDetailModalProps {
 
 export default function SessionDetailModal({ sessionId, isOpen, onClose }: SessionDetailModalProps) {
   const [session, setSession] = useState<SessionDetail | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -22,6 +24,35 @@ export default function SessionDetailModal({ sessionId, isOpen, onClose }: Sessi
         setError(null)
         const data = await sessionsClient.getSessionDetails(sessionId)
         setSession(data)
+
+        // Fetch video URL if videoPath exists
+        if (data.videoPath) {
+          setIsLoadingVideo(true)
+          try {
+            const videoResponse = await fetch(`http://localhost:3000/api/video/video/${sessionId}/url`, {
+              credentials: 'include',
+            })
+            
+            if (!videoResponse.ok) {
+              throw new Error(`Failed to fetch video URL: ${videoResponse.status}`)
+            }
+            
+            const videoData = await videoResponse.json()
+            console.log('Video URL response:', videoData)
+            
+            if (videoData.success && videoData.data?.url) {
+              console.log('Setting video URL:', videoData.data.url.substring(0, 100) + '...')
+              setVideoUrl(videoData.data.url)
+            } else {
+              console.error('No video URL in response:', videoData)
+            }
+          } catch (videoError) {
+            console.error('Failed to load video URL:', videoError)
+            // Don't show error to user, just skip video
+          } finally {
+            setIsLoadingVideo(false)
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load session details')
       } finally {
@@ -31,6 +62,9 @@ export default function SessionDetailModal({ sessionId, isOpen, onClose }: Sessi
 
     if (isOpen && sessionId) {
       loadSessionDetails()
+    } else {
+      // Clear video URL when modal closes
+      setVideoUrl(null)
     }
   }, [isOpen, sessionId])
 
@@ -142,20 +176,47 @@ export default function SessionDetailModal({ sessionId, isOpen, onClose }: Sessi
                 </div>
 
                 {/* Video Playback */}
-                {session.videoUrl && (
+                {session.videoPath && (
                   <div>
                     <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
-                      Video
+                      Video Recording
                     </h4>
-                    <div className="bg-gray-100 rounded-lg aspect-video flex items-center justify-center">
-                      <video 
-                        src={session.videoUrl} 
-                        controls 
-                        className="w-full h-full rounded-lg"
-                      >
-                        Your browser does not support the video tag.
-                      </video>
-                    </div>
+                    {isLoadingVideo ? (
+                      <div className="bg-gray-100 rounded-lg aspect-video flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                          <p className="text-sm text-gray-600">Loading video...</p>
+                        </div>
+                      </div>
+                    ) : videoUrl ? (
+                      <div className="bg-black rounded-lg overflow-hidden">
+                        <video 
+                          src={videoUrl} 
+                          controls 
+                          className="w-full aspect-video"
+                          preload="metadata"
+                          onError={(e) => {
+                            console.error('Video playback error:', e)
+                            const videoElement = e.target as HTMLVideoElement
+                            console.error('Error code:', videoElement.error?.code)
+                            console.error('Error message:', videoElement.error?.message)
+                          }}
+                          onLoadStart={() => console.log('Video loading started')}
+                          onCanPlay={() => console.log('Video can play')}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-100 rounded-lg aspect-video flex items-center justify-center">
+                        <div className="text-center text-gray-500">
+                          <svg className="mx-auto h-12 w-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-sm">Video unavailable</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

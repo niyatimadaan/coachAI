@@ -216,19 +216,19 @@ export function calculateElbowAlignment(
   if (angle >= 80 && angle <= 100) {
     // Perfect range: 80-100° = 95-100 points
     const centerDist = Math.abs(angle - 90);
-    score = 100 - (centerDist * 0.5);
+    score = 100 - (centerDist * 0.2);
   } else if ((angle >= 70 && angle < 80) || (angle > 100 && angle <= 115)) {
     // Good range: 70-80° or 100-115° = 85-95 points
     const deviation = angle < 80 ? (80 - angle) : (angle - 100);
-    score = 95 - (deviation * 1.0);
+    score = 95 - (deviation * 0.5);
   } else if ((angle >= 55 && angle < 70) || (angle > 115 && angle <= 130)) {
     // Acceptable range: 55-70° or 115-130° = 70-85 points
     const deviation = angle < 70 ? (70 - angle) : (angle - 115);
-    score = 85 - (deviation * 1.0);
+    score = 85 - (deviation * 0.75);
   } else {
     // Poor: <55° or >130° = 0-70 points
     const deviation = angle < 55 ? (55 - angle) : (angle - 130);
-    score = Math.max(0, 70 - (deviation * 1.5));
+    score = Math.max(0, 70 - (deviation * 0.25));
   }
   
   console.log(`Elbow alignment: angle=${angle.toFixed(1)}°, score=${score.toFixed(1)}`);
@@ -345,7 +345,7 @@ export function calculateFollowThroughQuality(
     .filter(wrist => wrist !== undefined) as PoseLandmark[];
   
   if (wristPositions.length < 2) {
-    return 50; // Default score
+    return 75; // Default score
   }
   
   // Calculate position variance (lower is better - more consistent)
